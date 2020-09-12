@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<style>
+	svg {
+		font: 10px sans-serif;
+	}
+	.line {
+		fill: none;
+		stroke: #000;
+		stroke-width: 1.5px;
+	}
+	.text {
+		font-size: 20px;
+	}
+	.axis path,
+	.axis line {
+		fill: none;
+		stroke: #000;
+		shape-rendering: crispEdges;
+	}
+</style>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+<script src="NoSleep.min.js"></script>
+
+<button type="button" onclick="enableTrack()">Click Me!</button>
+
+<link rel="manifest" href="manifest.json">
+<script>
+	var audioContext = null;
+	var myOsc = null;
+	var runningAvg = 0;
+	var avgOver = 5;
+	var newPoints = 0;
+
+	var numPoints = 100,
+		random = d3.random.normal(0, .2),
+		data = d3.range(numPoints).map(random);
+	var margin = {top: 20, right: 60, bottom: 20, left: 40},
+		width = 960 - margin.left - margin.right,
+		height = 500 - margin.top - margin.bottom;
+	var x = d3.scale.linear()
+		.domain([0, numPoints - 1])
+		.range([0, width]);
+	var y = d3.scale.linear()
+		.domain([-10, 10])
+		.range([height, 0]);
+	var line = d3.svg.line()
+		.x(function(d, i) { return x(i); })
+		.y(function(d, i) { return y(d); });
+	var svg = d3.select("body").append("svg")
+		.attr("width", width + margin.left + margin.right)
+		.attr("height", height + margin.top + margin.bottom)
+		.append("g")
+		.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+	svg.append("defs").append("clipPath")
+		.attr("id", "clip")
+		.append("rect")
+		.attr("width", width)
+		.attr("height", height);
+	svg.append("g")
+		.attr("class", "x axis")
+		.attr("transform", "translate(0," + y(0) + ")")
+		.call(d3.svg.axis().scale(x).orient("bottom"));
+	svg.append("g")
+		.attr("class", "y axis")
+		.call(d3.svg.axis().scale(y).orient("left"));
+	var path = svg.append("g")
+		.attr("clip-path", "url(#clip)")
+		.append("path")
+		.datum(data)
+		.attr("class", "line")
+		.attr("d", line);
+	var textFormat = d3.format(".3f");
+	var lastPoint = svg.append("text")
+		.attr("dy", ".35em")
+		.style("fill", "red")
+		.attr("class", "text")
+		.attr({
+			'x':x(numPoints-1),
+			'y': y(data[numPoints-1])
+		})
+		.text(textFormat(data[numPoints-1]));
+
+	function enableTrack() {
+		// feature detect
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission()
+        .then(permissionState => {
+          if (permissionState === 'granted') {
+            window.addEventListener('devicemotion', () => {});
+          }
+        })
+        .catch(console.error);
+    } else {
+      // handle regular non iOS 13+ devices
+    }
+
+		window.AudioContext = window.AudioContext || window.webkitAudioContext;
+		audioContext = new AudioContext();
+
+		myOsc = audioContext.createOscillator();
+		myOsc.frequency.value = 1000;
+		myOsc.detune.value = 0;
+		myOsc.type = 'square';
+		
+		myOsc.connect(audioContext.destination);
+		myOsc.start();
+
+		var noSleep = new NoSleep();
+		noSleep.enable();
+
+	}
+
+	function tick_withReal() {
+		// push a new data point onto the back
+    window.ondevicemotion = function(e) {
+      data.push(e.accelerationIncludingGravity.x);
+      // redraw the line, and slide it to the left
+      path
+        .attr("d", line)
+        .attr("transform", null)
+        .transition()
+        .duration(500)
+        .ease("linear")
+        .attr("transform", "translate(" + x(-1) + ",0)")
+        .each("start", function () {
+          lastPoint
+            .text(textFormat(data[numPoints-2]))
+            .attr({
+              'x':x(numPoints-2),
+              'y': y(data[numPoints-2])
+            })
+            .attr("transform", null)
+            .transition()
+            .duration(500)
+            .ease("linear")
+            .text(textFormat(data[numPoints-1]))
+            .attr({
+              'x':x(numPoints-1),
+              'y': y(data[numPoints-1])
+            })
+        })
+        .each("end", tick);
+
+      // pop the old data point off the front
+      data.shift();
+	  if (myOsc) {
+		val = e.accelerationIncludingGravity.x;
+		runningAvg = runningAvg * ((avgOver-1)/avgOver) + val/avgOver;
+		newPoints += 1;
+		if (newPoints > avgOver) {//Only update now		
+			if (runningAvg<0) {
+				val = 5000 + runningAvg * 100;
+			} else {
+				val = runningAvg * 100;
+			}
+			newPoints = 0;
+			myOsc.frequency.value = val;
+		}
+	  }
+	  
+    }
+	}
+
+  function tick() {
+		// push a new data point onto the back
+		var val = random()*10;
+		data.push(val);
+		// redraw the line, and slide it to the left
+		path
+			.attr("d", line)
+			.attr("transform", null)
+			.transition()
+			.duration(500)
+			.ease("linear")
+			.attr("transform", "translate(" + x(-1) + ",0)")
+			.each("start", function () {
+				lastPoint
+					.text(textFormat(data[numPoints-2]))
+					.attr({
+						'x':x(numPoints-2),
+						'y': y(data[numPoints-2])
+					})
+					.attr("transform", null)
+					.transition()
+ 					.duration(500)
+					.ease("linear")
+					.text(textFormat(data[numPoints-1]))
+					.attr({
+						'x':x(numPoints-1),
+						'y': y(data[numPoints-1])
+					})
+			})
+			.each("end", tick);
+
+		// pop the old data point off the front
+		data.shift();
+		if (myOsc) {
+			if (val < 0) {//This will be a high pitch
+				val = 5000 + val * 100;	
+			} else {
+				val = val * 100;
+			}
+			myOsc.frequency.value = val;
+  		}
+	}
+
+  if (window.DeviceMotionEvent != undefined) {
+      tick_withReal();
+    } else {
+      tick();
+    }
+
+</script>
+</body>
+</html>
